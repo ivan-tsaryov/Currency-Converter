@@ -12,8 +12,6 @@ NSString *const kDefaultCurrency = @"KGS";
 
 @interface CurrencyPVController ()
 
-@property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *currencies;
-
 @end
 
 @implementation CurrencyPVController
@@ -22,8 +20,10 @@ NSString *const kDefaultCurrency = @"KGS";
     self = [super init];
     if (self) {
         self.currencies = currencies_;
-        self.leftSelectedCurrency = kDefaultCurrency;
-        self.rightSelectedCurrency = kDefaultCurrency;
+        self.selectedCurrencies = [[NSMutableArray alloc] init];
+        
+        self.selectedCurrencies[0] = @"USD";
+        self.selectedCurrencies[1] = @"RUB";
     }
     return self;
 }
@@ -37,19 +37,17 @@ NSString *const kDefaultCurrency = @"KGS";
 }
 
 -(NSString *)pickerView:(UIPickerView *)pickerView titleForRow:(NSInteger)row forComponent:(NSInteger)component {
-    NSArray * keys = [[self.currencies allKeys] sortedArrayUsingSelector: @selector(caseInsensitiveCompare:)];
+    self.keys = [[self.currencies allKeys] sortedArrayUsingSelector: @selector(caseInsensitiveCompare:)];
     
-    return keys[row];
+    return self.keys[row];
 }
 
 -(void)pickerView:(UIPickerView *)pickerView didSelectRow:(NSInteger)row inComponent:(NSInteger)component {
-    NSArray * keys = [[self.currencies allKeys] sortedArrayUsingSelector: @selector(caseInsensitiveCompare:)];
+    self.keys = [[self.currencies allKeys] sortedArrayUsingSelector: @selector(caseInsensitiveCompare:)];
     
-    if (component == 0) {
-        self.leftSelectedCurrency = keys[row];
-    } else {
-        self.rightSelectedCurrency = keys[row];
-    }
+    self.selectedCurrencies[component] = self.keys[row];
+    
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"userSelect" object: nil];
 }
 
 @end

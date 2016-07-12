@@ -13,9 +13,9 @@ extern NSString *const kDefaultCurrency;
 
 @interface CurrencyPVController : NSObject <UIPickerViewDelegate, UIPickerViewDataSource>
 
-@property (nonatomic, strong) UITextField *activeTextField;
-@property (nonatomic, strong) NSString *leftSelectedCurrency;
-@property (nonatomic, strong) NSString *rightSelectedCurrency;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *currencies;
+@property (nonatomic, strong) NSArray *keys;
+@property (nonatomic, strong) NSMutableArray *selectedCurrencies;
 
 - (id)initWithData: (NSMutableDictionary<NSString *, NSNumber *> *) currencies_;
 

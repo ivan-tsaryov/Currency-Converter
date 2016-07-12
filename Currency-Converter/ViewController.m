@@ -25,9 +25,10 @@ NSString *const kParserURL = @"http://www.cbr.ru/scripts/XML_daily.asp?date_req=
 @property (weak, nonatomic) IBOutlet UITextField *leftValueTextField;
 @property (weak, nonatomic) IBOutlet UITextField *rightValueTextField;
 
+@property (strong, nonatomic) IBOutletCollection(UITextField) NSArray *valueTextFields;
+
 @property (weak, nonatomic) IBOutlet UILabel *usdLabel;
 @property (weak, nonatomic) IBOutlet UILabel *eurLabel;
-
 
 @property (weak, nonatomic) IBOutlet UIPickerView *currencyPickerView;
 
@@ -38,6 +39,8 @@ NSString *const kParserURL = @"http://www.cbr.ru/scripts/XML_daily.asp?date_req=
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(userSelect:) name:@"userSelect" object:nil];
     
     self.currentDate = [NSDate date];
     
@@ -51,6 +54,29 @@ NSString *const kParserURL = @"http://www.cbr.ru/scripts/XML_daily.asp?date_req=
 
 - (void)didReceiveMemoryWarning {
     [super didReceiveMemoryWarning];
+}
+
+- (void)sendGetExchangeRatesRequest {
+    NSURLSession *session = [NSURLSession sharedSession];
+    
+    NSString *urlString = [NSString stringWithFormat: kParserURL, [self stringFromDate: self.currentDate]];
+    NSURL *url = [[NSURL alloc] initWithString: urlString];
+    
+    NSURLSessionDataTask *task = [session dataTaskWithURL: url completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
+        NSString *result = [[NSString alloc] initWithData: data encoding: NSWindowsCP1251StringEncoding];
+        self.xmlParser = [[NSXMLParser alloc] initWithData: data];
+        
+        NSLog(@"Получен ответ: %@", result);
+        
+        self.xmlParser.delegate = self.parserResult;
+        [self.xmlParser parse];
+        
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self updateViews];
+        });
+    }];
+    
+    [task resume];
 }
 
 -(void) configureCurrencyPicker {
@@ -76,29 +102,6 @@ NSString *const kParserURL = @"http://www.cbr.ru/scripts/XML_daily.asp?date_req=
     
     [self sendGetExchangeRatesRequest];
 }
-                         
-- (void)sendGetExchangeRatesRequest {
-    NSURLSession *session = [NSURLSession sharedSession];
-    
-    NSString *urlString = [NSString stringWithFormat: kParserURL, [self stringFromDate: self.currentDate]];
-    NSURL *url = [[NSURL alloc] initWithString: urlString];
-    
-    NSURLSessionDataTask *task = [session dataTaskWithURL: url completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
-        NSString *result = [[NSString alloc] initWithData: data encoding: NSWindowsCP1251StringEncoding];
-        self.xmlParser = [[NSXMLParser alloc] initWithData: data];
-        
-        NSLog(@"Получен ответ: %@", result);
-        
-        self.xmlParser.delegate = self.parserResult;
-        [self.xmlParser parse];
-        
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self updateViews];
-        });
-    }];
-    
-    [task resume];
-}
 
 -(NSString *) stringFromDate: (NSDate *)date {
     NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
@@ -114,54 +117,47 @@ NSString *const kParserURL = @"http://www.cbr.ru/scripts/XML_daily.asp?date_req=
     self.usdLabel.text = [[@"USD: " stringByAppendingString: [self.parserResult.result[@"USD"] stringValue]] stringByAppendingString: @" RUB"];
     self.eurLabel.text = [[@"EUR: " stringByAppendingString: [self.parserResult.result[@"EUR"] stringValue]] stringByAppendingString: @" RUB"];
     
+    NSString *leftCurr = self.currencyPVController.selectedCurrencies[0];
+    NSString *rightCurr = self.currencyPVController.selectedCurrencies[1];
+    
+    NSArray *keys = keys = [[self.parserResult.result allKeys] sortedArrayUsingSelector: @selector(caseInsensitiveCompare:)];
+    
+    [self.currencyPickerView selectRow: [keys indexOfObject: leftCurr] inComponent: 0 animated: false];
+    [self.currencyPickerView selectRow: [keys indexOfObject: rightCurr] inComponent: 1 animated: false];
+    [self convertCurrenciesWithConvertingID: 0 ResultID: 1 ConvTextField: self.valueTextFields[0] ResTextField: self.valueTextFields[1]];
 }
 
-- (IBAction)valueTextFieldChanged:(id)sender {
-    UITextField *convertingTextField = (UITextField *) sender;
-    UITextField *resultTextField;
+- (IBAction)textFieldValueChanged:(id)sender {
+    NSArray *tfs = self.valueTextFields;
     
-    NSString *selectedConvertingCurrency;
-    NSString *selectedResultCurrency;
-    float convertingValue, resultValue;
+    int convID = (int) [tfs indexOfObject: (UITextField *) sender];
+    int resID = (int) tfs.count - (convID + 1);
     
-    if (convertingTextField == self.leftValueTextField) {
-        selectedConvertingCurrency = self.currencyPVController.leftSelectedCurrency;
-        selectedResultCurrency = self.currencyPVController.rightSelectedCurrency;
-        resultTextField = self.rightValueTextField;
-        convertingValue = [self.leftValueTextField.text floatValue];
-    } else {
-        selectedConvertingCurrency = self.currencyPVController.rightSelectedCurrency;
-        selectedResultCurrency = self.currencyPVController.leftSelectedCurrency;
-        resultTextField = self.leftValueTextField;
-        convertingValue = [self.rightValueTextField.text floatValue];
-    }
-    
-//    NSLog(@"Конвертируемая величина: %@", selectedConvertingCurrency);
-//    NSLog(@"Результируемая величина: %@", selectedResultCurrency);
-    
+    [self convertCurrenciesWithConvertingID: convID ResultID: resID ConvTextField: tfs[convID] ResTextField: tfs[resID]];
+}
 
-    float convertingRate = [[self.parserResult.result objectForKey: selectedConvertingCurrency] floatValue];
-    float resultRate = [[self.parserResult.result objectForKey: selectedResultCurrency] floatValue];
+-(void) convertCurrenciesWithConvertingID: (int) convID ResultID: (int) resID ConvTextField: (UITextField*) ctf ResTextField: (UITextField *) rtf  {
+    NSMutableDictionary<NSString *, NSNumber *> *currencies = self.currencyPVController.currencies;
     
+    NSString *selectedConvertingCurrency = self.currencyPVController.selectedCurrencies[convID];
+    NSString *selectedResultCurrency = self.currencyPVController.selectedCurrencies[resID];
     
-//    NSLog(@"Конвертируемое количество: %f", convertingValue);
-//    NSLog(@"Конвертируемый курс: %f", convertingRate);
-//    NSLog(@"Результативный курс : %f", resultRate);
+    float convertingValue = [ctf.text floatValue];
+
+    float convertingRate = [[currencies objectForKey: selectedConvertingCurrency] floatValue];
+    float resultRate = [[currencies objectForKey: selectedResultCurrency] floatValue];
     
-    resultValue = convertingRate/resultRate*convertingValue;
+    float resultValue = resultValue = convertingRate/resultRate*convertingValue;
     
-    
-    resultTextField.text = [[NSNumber numberWithFloat: resultValue] stringValue];
+    rtf.text = [[NSNumber numberWithFloat: resultValue] stringValue];
 }
 
 -(void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event {
-    [self.view endEditing:YES];// this will do the trick
-    
-    if ([self.leftValueTextField.text  isEqual: @""]) {
-        self.leftValueTextField.text = @"0";
-    } else if ([self.rightValueTextField.text isEqual: @""]) {
-        self.rightValueTextField.text = @"0";
-    }
+    [self.view endEditing:YES];
+}
+
+- (void)userSelect:(NSNotification *)notification {
+    [self convertCurrenciesWithConvertingID: 0 ResultID: 1 ConvTextField: self.leftValueTextField ResTextField: self.rightValueTextField];
 }
 
 @end
